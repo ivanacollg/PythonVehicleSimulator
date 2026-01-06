@@ -15,7 +15,7 @@ import sys
 import webbrowser
 import matplotlib.pyplot as plt
 from python_vehicle_simulator.vehicles import (
-    DSRV, frigate, otter, ROVzefakkel, semisub, shipClarke83, supply, tanker, 
+    DSRV, frigate, otter, ROVzefakkel, semisub, shipClarke83, supply, tanker, blueboat,
     remus100, torpedo
 )
 from python_vehicle_simulator.lib import (
@@ -45,7 +45,8 @@ Vehicle constructors:
   supply('DPcontrol', x_d, y_d, psi_d, V_c, beta_c)      
   tanker('headingAutopilot', psi_d, V_c, beta_c, depth)    
   remus100('depthHeadingAutopilot', z_d, psi_d, V_c, beta_c)             
-  torpedo('depthHeadingAutopilot', z_d, psi_d, V_c, beta_c)             
+  torpedo('depthHeadingAutopilot', z_d, psi_d, V_c, beta_c)    
+  blueboat('headingAutopilot', psi_d, V_c, beta_c, tau_X)          
 
 Call constructors without arguments to test step inputs, e.g. DSRV(), otter(), etc.
 """
@@ -67,6 +68,7 @@ def main():
         '8': lambda: tanker('headingAutopilot', -20, 0.5, 150, 20, 80),
         '9': lambda: remus100('depthHeadingAutopilot', 30, 50, 1525, 0.5, 170),
         '10': lambda: torpedo('depthHeadingAutopilot', 30, 50, 1525, 0.5, 170),
+        '11': lambda: blueboat('headingAutopilot', 100.0, 0.3, -30.0, 200.0),
     }
 
     if no in vehicleOptions:
