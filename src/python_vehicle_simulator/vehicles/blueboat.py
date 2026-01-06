@@ -69,7 +69,7 @@ class blueboat:
         # Constants
         D2R = math.pi / 180     # deg2rad
         self.g = 9.81           # acceleration of gravity (m/s^2)
-        rho = 1025              # density of water (kg/m^3)
+        rho = 1000              # density of water (kg/m^3)
 
         if controlSystem == "headingAutopilot":
             self.controlDescription = (
@@ -89,8 +89,8 @@ class blueboat:
 
         # Initialize the blueboat USV model
         self.T_n = 0.1  # propeller time constants (s)
-        self.L = 2.0    # length (m)
-        self.B = 1.08   # beam (m)
+        self.L = 1.053    # length (m)
+        self.B = 0.826   # beam (m)
         self.nu = np.array([0, 0, 0, 0, 0, 0], float)  # velocity vector
         self.u_actual = np.array([0, 0], float)  # propeller revolution states
         self.name = "blueboat USV (see 'blueboat.py' for more details)"
@@ -102,11 +102,11 @@ class blueboat:
         self.dimU = len(self.controls)
 
         # Vehicle parameters
-        m = 55.0                                 # mass (kg)
-        self.mp = 25.0                           # Payload (kg)
+        m = 15.0                                 # mass (kg)
+        self.mp = 0.0                           # Payload (kg)
         self.m_total = m + self.mp
-        self.rp = np.array([0.05, 0, -0.35], float) # location of payload (m)
-        rg = np.array([0.2, 0, -0.2], float)     # CG for hull only (m)
+        self.rp = np.array([0.0, 0.0, 0.0], float) # location of payload (m)
+        rg = np.array([-0.035, -0.006, -0.031], float)     # CG for hull only (m)
         rg = (m * rg + self.mp * self.rp) / (m + self.mp)  # CG corrected for payload
         self.S_rg = Smtrx(rg)
         self.H_rg = Hmtrx(rg)
@@ -117,27 +117,35 @@ class blueboat:
         R66 = 0.25 * self.L
         T_sway = 1.0        # time constant in sway (s)
         T_yaw = 1.0         # time constant in yaw (s)
-        Umax = 6 * 0.5144   # max forward speed (m/s)
+        Umax = 3.0   # max forward speed (m/s)
 
         # Data for one pontoon
-        self.B_pont = 0.25  # beam of one pontoon (m)
-        y_pont = 0.395      # distance from centerline to waterline centroid (m)
-        Cw_pont = 0.75      # waterline area coefficient (-)
-        Cb_pont = 0.4       # block coefficient, computed from m = 55 kg
+        self.B_pont = 0.128  # beam of one pontoon (m)
+        y_pont = 0.296     # distance from centerline to waterline centroid (m)
+        Cw_pont = 0.102/(self.B_pont*self.L)     # waterline area coefficient (-)
+        Cb_pont = 0.35       # block coefficient, computed from m = 55 kg
 
         # Inertia dyadic, volume displacement and draft
         nabla = (m + self.mp) / rho  # volume
         self.T = nabla / (2 * Cb_pont * self.B_pont * self.L)  # draft
         Ig_CG = m * np.diag(np.array([R44 ** 2, R55 ** 2, R66 ** 2]))
         self.Ig = Ig_CG - m * self.S_rg @ self.S_rg - self.mp * self.S_rp @ self.S_rp
+        #Ig_CAD = np.array([
+		#		    [1.756,  -0.003,  0.069],
+		#		    [-0.003,  1.191,  -0.01],
+		#		    [0.069,  -0.01,  2.595]
+		#		])
+        #self.Ig = Ig_CAD
 
         # Experimental propeller data including lever arms
         self.l1 = -y_pont  # lever arm, left propeller (m)
         self.l2 = y_pont  # lever arm, right propeller (m)
-        self.k_pos = 0.02216 / 2  # Positive Bollard, one propeller
-        self.k_neg = 0.01289 / 2  # Negative Bollard, one propeller
-        self.n_max = math.sqrt((0.5 * 24.4 * self.g) / self.k_pos)  # max. prop. rev.
-        self.n_min = -math.sqrt((0.5 * 13.6 * self.g) / self.k_neg) # min. prop. rev.
+        self.k_pos = 0.02588 / 2  # Positive Bollard, one propeller
+        self.k_neg = 0.01222 / 2  # Negative Bollard, one propeller
+        #self.n_max = math.sqrt((0.5 * 24.4 * self.g) / self.k_pos)  # max. prop. rev.
+        #self.n_min = -math.sqrt((0.5 * 13.6 * self.g) / self.k_neg) # min. prop. rev.
+        self.n_max = 45.85  # max. prop. rev. From data sheet
+        self.n_min = -47.066 # min. prop. rev. From data sheet
 
         # MRB_CG = [ (m+mp) * I3  O3      (Fossen 2021, Chapter 3)
         #               O3       Ig ]
@@ -184,7 +192,7 @@ class blueboat:
         G44 = rho * self.g * nabla * GM_T
         G55 = rho * self.g * nabla * GM_L
         G_CF = np.diag([0, 0, G33, G44, G55, 0])  # spring stiff. matrix in CF
-        LCF = -0.2
+        LCF = -0.1
         H = Hmtrx(np.array([LCF, 0.0, 0.0]))  # transform G_CF from CF to CO
         self.G = H.T @ G_CF @ H
 
@@ -210,7 +218,7 @@ class blueboat:
         # Heading autopilot
         self.e_int = 0  # integral state
         self.wn = 2.5   # PID pole placement
-        self.zeta = 1
+        self.zeta = 1.0
 
         # Reference model
         self.r_max = 10 * math.pi / 180  # maximum yaw rate
@@ -218,7 +226,7 @@ class blueboat:
         self.r_d = 0
         self.a_d = 0
         self.wn_d = 0.5  # desired natural frequency in yaw
-        self.zeta_d = 1  # desired relative damping ratio
+        self.zeta_d = 1.0  # desired relative damping ratio
 
 
     def dynamics(self, eta, nu, u_actual, u_control, sampleTime):
@@ -346,7 +354,7 @@ class blueboat:
         wn_d = self.wn_d  # reference model natural frequency
         zeta_d = self.zeta_d  # reference model relative damping factor
 
-        m = 41.4  # moment of inertia in yaw including added mass
+        m = 2.595 + 4.4115 #sign? # moment of inertia in yaw including added mass
         T = 1
         K = T / m
         d = 1 / K
