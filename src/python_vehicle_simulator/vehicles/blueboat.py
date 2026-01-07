@@ -41,7 +41,7 @@ Author:     Thor I. Fossen
 """
 import numpy as np
 import math
-from python_vehicle_simulator.lib.control import PIDpolePlacement
+from python_vehicle_simulator.lib.control import PIDpolePlacement, PIpolePlacement
 from python_vehicle_simulator.lib.gnc import Smtrx, Hmtrx, Rzyx, m2c, crossFlowDrag, sat
 
 # Class Vehicle
@@ -82,6 +82,7 @@ class blueboat:
             controlSystem = "stepInput"
 
         self.ref = r
+        self.u_ref = 1.0 # m/s
         self.V_c = V_current
         self.beta_c = beta_current * D2R
         self.controlMode = controlSystem
@@ -117,7 +118,7 @@ class blueboat:
         R66 = 0.25 * self.L
         T_sway = 1.0        # time constant in sway (s)
         T_yaw = 1.0         # time constant in yaw (s)
-        Umax = 3.0   # max forward speed (m/s)
+        Umax = 4  # max forward speed (m/s)
 
         # Data for one pontoon
         self.B_pont = 0.128  # beam of one pontoon (m)
@@ -140,8 +141,8 @@ class blueboat:
         # Experimental propeller data including lever arms
         self.l1 = -y_pont  # lever arm, left propeller (m)
         self.l2 = y_pont  # lever arm, right propeller (m)
-        self.k_pos = 0.02588 / 2  # Positive Bollard, one propeller
-        self.k_neg = 0.01222 / 2  # Negative Bollard, one propeller
+        self.k_pos = 0.02588   # Positive Bollard, one propeller
+        self.k_neg = 0.01222  # Negative Bollard, one propeller
         #self.n_max = math.sqrt((0.5 * 24.4 * self.g) / self.k_pos)  # max. prop. rev.
         #self.n_min = -math.sqrt((0.5 * 13.6 * self.g) / self.k_neg) # min. prop. rev.
         self.n_max = 45.85  # max. prop. rev. From data sheet
@@ -202,7 +203,7 @@ class blueboat:
         w5 = math.sqrt(G55 / self.M[4, 4])
 
         # Linear damping terms (hydrodynamic derivatives)
-        Xu = -24.4 *self. g / Umax   # specified using the maximum speed
+        Xu = -110 / Umax # Max total thrust / Umax   # specified using the maximum speed
         Yv = -self.M[1, 1]  / T_sway # specified using the time constant in sway
         Zw = -2 * 0.3 * w3 * self.M[2, 2]  # specified using relative damping
         Kp = -2 * 0.2 * w4 * self.M[3, 3]
@@ -219,6 +220,13 @@ class blueboat:
         self.e_int = 0  # integral state
         self.wn = 2.5   # PID pole placement
         self.zeta = 1.0
+
+        #Surge speed autopilot
+        self.u_int = 0
+        self.u_max = Umax
+        self.u_d = 0
+        self.u_dot_d = 0
+
 
         # Reference model
         self.r_max = 10 * math.pi / 180  # maximum yaw rate
@@ -256,10 +264,10 @@ class blueboat:
 
         CA = m2c(self.MA, nu_r)
         # Uncomment to cancel the Munk moment in yaw, if stability problems
-        # CA[5, 0] = 0  
-        # CA[5, 1] = 0 
-        # CA[0, 5] = 0
-        # CA[1, 5] = 0
+        CA[5, 0] = 0  
+        CA[5, 1] = 0 
+        CA[0, 5] = 0
+        CA[1, 5] = 0
 
         C = CRB + CA
 
@@ -296,6 +304,9 @@ class blueboat:
         # Hydrodynamic linear damping + nonlinear yaw damping
         tau_damp = -np.matmul(self.D, nu_r)
         tau_damp[5] = tau_damp[5] - 10 * self.D[5, 5] * abs(nu_r[5]) * nu_r[5]
+        # --- ADD THIS LINE FOR SURGE ---
+        # Subtract quadratic drag force (F = -C * |u| * u)
+        tau_damp[0] = tau_damp[0] - (0.5*1000*0.102*2*0.35)*0.09 * abs(nu_r[0]) * nu_r[0] # Magic cumbers are Xuu dividing by 7 to make stable dor sim??
 
         # State derivatives (with dimension)
         tau_crossflow = crossFlowDrag(self.L, self.B_pont, self.T, nu_r)
@@ -325,13 +336,81 @@ class blueboat:
         [n1, n2] = controlAllocation(tau_X, tau_N)
         """
         tau = np.array([tau_X, tau_N])  # tau = B * u_alloc
+        print(tau)
         u_alloc = np.matmul(self.Binv, tau)  # u_alloc = inv(B) * tau
 
         # u_alloc = abs(n) * n --> n = sign(u_alloc) * sqrt(u_alloc)
         n1 = np.sign(u_alloc[0]) * math.sqrt(abs(u_alloc[0]))
         n2 = np.sign(u_alloc[1]) * math.sqrt(abs(u_alloc[1]))
 
+        # 2. Check Saturation
+        highest_requested = max(abs(n1), abs(n2))
+
+        if highest_requested > self.n_max:
+            # Calculate the required steering difference (turning power)
+            diff = n1 - n2
+            
+            # If the turn ITSELF is physically impossible (e.g. diff > 200), clamp it
+            if abs(diff) > 2 * self.n_max:
+                diff = np.sign(diff) * 2 * self.n_max
+
+            # 3. Apply Heading Priority
+            # Shift the RPMs down so the highest one hits the ceiling,
+            # but the difference between them stays exactly the same.
+            if n1 > n2: # Turning Right (Port/Left motor is dominant)
+                n1 = self.n_max
+                n2 = self.n_max - diff
+            else:       # Turning Left (Starboard/Right motor is dominant)
+                n2 = self.n_max
+                n1 = self.n_max + diff
+        print(n1)
+        print(n2)
         return n1, n2
+
+
+    def speedAutopilot(self, nu, sampleTime):
+        """
+        u = speedAutopilot(eta,nu,sampleTime) is a PI controller
+        for automatic speed control based on pole placement.
+
+        tau_N = (T/K) * a_d + (1/K) * rd
+               - Kp * ( ssa( psi-psi_d ) + Td * (r - r_d) + (1/Ti) * z )
+
+        """
+        u = nu[0]  # surge speed
+        e_u = u - self.u_d  # surge speed tracking error
+        u_target = self.u_ref # surge speed setpoint
+
+        wn = 1.0# self.wn  # PID natural frequency
+        zeta = self.zeta  # PID natural relative damping factor
+        wn_d = self.wn_d  # reference model natural frequency
+        zeta_d = self.zeta_d  # reference model relative damping factor
+
+        m = 15 + (0.1*15)  # (mass-Xudot) = 15
+        d = 0.5*1000*0.102*2*0.35 # (Xuu = 0.5*rho*Awetsurface*Cd)
+        k = 0
+        tau_max = 110
+
+        # Heading PID feedback controller with 3rd-order reference model
+        [tau_X, self.u_int, self.u_d, self.u_dot_d] = PIpolePlacement(
+            self.u_int, # integral state
+            e_u,
+            self.u_d,
+            self.u_dot_d,
+            m,
+            d,
+            k,
+            wn_d,
+            zeta_d,
+            wn,
+            zeta,
+            u_target,
+            self.u_max,
+            sampleTime,
+            tau_max
+        )
+
+        return tau_X
 
 
     def headingAutopilot(self, eta, nu, sampleTime):
@@ -354,15 +433,12 @@ class blueboat:
         wn_d = self.wn_d  # reference model natural frequency
         zeta_d = self.zeta_d  # reference model relative damping factor
 
-        m = 2.595 + 4.4115 #sign? # moment of inertia in yaw including added mass
-        T = 1
-        K = T / m
-        d = 1 / K
+        m = 2.595 + 4.4115 #(Iz-Nr)/1 moment of inertia in yaw including added mass
+        d = 4.4115 #Nr/1
         k = 0
+        tau_X = self.speedAutopilot(nu, sampleTime)
 
-        # PID feedback controller with 3rd-order reference model
-        tau_X = self.tauX
-
+        # Heading PID feedback controller with 3rd-order reference model
         [tau_N, self.e_int, self.psi_d, self.r_d, self.a_d] = PIDpolePlacement(
             self.e_int,
             e_psi,

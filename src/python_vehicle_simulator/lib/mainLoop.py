@@ -95,6 +95,7 @@ def simulate(N, sampleTime, vehicle):
 
         # Propagate vehicle and attitude dynamics
         [nu, u_actual]  = vehicle.dynamics(eta,nu,u_actual,u_control,sampleTime)
+        print(nu[0])
         eta = attitudeEuler(eta,nu,sampleTime)
 
     # Store simulation time vector

@@ -60,7 +60,7 @@ def main():
     vehicleOptions = {
         '1': lambda: DSRV('depthAutopilot', 60.0),
         '2': lambda: frigate('headingAutopilot', 10.0, 100.0),
-        '3': lambda: otter('headingAutopilot', 100.0, 0.3, -30.0, 200.0),
+        '3': lambda: otter('headingAutopilot', 90.0, 0.3, -30.0, 200.0),
         '4': lambda: ROVzefakkel('headingAutopilot', 3.0, 100.0),
         '5': lambda: semisub('DPcontrol', 10.0, 10.0, 40.0, 0.5, 190.0),
         '6': lambda: shipClarke83('headingAutopilot', -20.0, 70, 8, 6, 0.7, 0.5, 10.0, 1e5),
@@ -68,7 +68,7 @@ def main():
         '8': lambda: tanker('headingAutopilot', -20, 0.5, 150, 20, 80),
         '9': lambda: remus100('depthHeadingAutopilot', 30, 50, 1525, 0.5, 170),
         '10': lambda: torpedo('depthHeadingAutopilot', 30, 50, 1525, 0.5, 170),
-        '11': lambda: blueboat('headingAutopilot', 100.0, 0.3, -30.0, 200.0),
+        '11': lambda: blueboat('headingAutopilot', 90.0, 0.3, -30.0, 50.0),
     }
 
     if no in vehicleOptions:

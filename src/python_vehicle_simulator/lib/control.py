@@ -11,8 +11,79 @@ Author:     Thor I. Fossen
 """
 
 import numpy as np
-from python_vehicle_simulator.lib.guidance import refModel3
+from python_vehicle_simulator.lib.guidance import refModel3, refModel2
 from python_vehicle_simulator.lib.gnc import ssa, Rzyx
+
+# SISO PI pole placement for surge speed with feed forward linarization
+def PIpolePlacement(
+        e_int,
+        e_x,
+        v_d,
+        a_d,
+        m,
+        d,
+        k,
+        wn_d,
+        zeta_d,
+        wn,
+        zeta,
+        v_target,
+        v_max,
+        sampleTime,
+        tau_max
+    ):
+
+        # 1. Update the Reference Model FIRST
+        # It's better to update this first so you calculate Feedforward 
+        # based on where you want to be *next*.
+        [v_d, a_d] = refModel2(v_d, a_d, v_target, wn_d, zeta_d, v_max, sampleTime)
+
+        # 2. PID Control Law (Feedback)
+        # Calculates correction based on error
+        Kp = m * wn ** 2.0 - k
+        Ki = (wn / 10.0) * Kp
+        
+        tau_fb = -Kp * e_x - Ki * e_int # Feedback thrust
+
+        # 3. Feedforward Control Law (The Physics)
+        # "d" is your drag coeff. We use v_d * abs(v_d) for quadratic drag.
+        tau_ff = (m * a_d) + (d * v_d * abs(v_d))
+
+        # 4. Total Thrust
+        tau_total = tau_fb + tau_ff
+
+        # -----------------------------------------------------------
+        # 5. ANTI-WINDUP (Integral Clamping)
+        # -----------------------------------------------------------
+        
+        # Check if we are physically saturated
+        is_saturated = abs(tau_total) > tau_max
+
+        # Check if the error is trying to make it WORSE (same sign)
+        # Remember: e_x is (u - u_d). If u < u_d, error is negative.
+        # A negative error INCREASES thrust in your negative feedback law (-Kp*e).
+        # So if we are Max Positive Saturated, and Error is Negative, we are winding up.
+        
+        # Logic: 
+        # If not saturated: Integrate normally.
+        # If saturated: Only integrate if the error helps UN-saturate us.
+        
+        if not is_saturated:
+            e_int += sampleTime * e_x
+        elif (tau_total > tau_max) and (e_x > 0): 
+            # We are hitting positive ceiling, but error is positive (speed too high),
+            # so this will help lower the thrust. ALLOW INTEGRATION.
+            e_int += sampleTime * e_x
+        elif (tau_total < -tau_max) and (e_x < 0):
+            # We are hitting negative floor, but error is negative (speed too low),
+            # so this will help raise the thrust. ALLOW INTEGRATION.
+            e_int += sampleTime * e_x
+        else:
+            # Otherwise, do nothing. Stop the integrator from growing.
+            pass
+
+        return tau_total, e_int, v_d, a_d
+
 
 # SISO PID pole placement
 def PIDpolePlacement(
