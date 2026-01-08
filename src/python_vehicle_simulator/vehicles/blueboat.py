@@ -256,8 +256,8 @@ class blueboat:
         self.zeta_d = 1.0  # desired relative damping ratio
 
         #ILOS Params
-        self.look_ahead_dist = 6 #m Set to 3 to 6 times the legth of the boat
-        self.kappa = 0.2 #0.1 slow, 1 is aggressive
+        self.look_ahead_dist = 4 #m Set to 3 to 6 times the legth of the boat
+        self.kappa = 0.0001 #0.1 slow, 1 is aggressive
         self.integrator = 0
 
 
