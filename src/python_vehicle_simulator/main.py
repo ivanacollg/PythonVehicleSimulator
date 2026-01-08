@@ -15,7 +15,7 @@ import sys
 import webbrowser
 import matplotlib.pyplot as plt
 from python_vehicle_simulator.vehicles import (
-    DSRV, frigate, otter, ROVzefakkel, semisub, shipClarke83, supply, tanker, 
+    DSRV, frigate, otter, ROVzefakkel, semisub, shipClarke83, supply, tanker, blueboat,
     remus100, torpedo
 )
 from python_vehicle_simulator.lib import (
@@ -45,7 +45,8 @@ Vehicle constructors:
   supply('DPcontrol', x_d, y_d, psi_d, V_c, beta_c)      
   tanker('headingAutopilot', psi_d, V_c, beta_c, depth)    
   remus100('depthHeadingAutopilot', z_d, psi_d, V_c, beta_c)             
-  torpedo('depthHeadingAutopilot', z_d, psi_d, V_c, beta_c)             
+  torpedo('depthHeadingAutopilot', z_d, psi_d, V_c, beta_c)    
+  blueboat('speedHeadingAutopilot', psi_d, V_c, beta_c, u_d)          
 
 Call constructors without arguments to test step inputs, e.g. DSRV(), otter(), etc.
 """
@@ -59,7 +60,7 @@ def main():
     vehicleOptions = {
         '1': lambda: DSRV('depthAutopilot', 60.0),
         '2': lambda: frigate('headingAutopilot', 10.0, 100.0),
-        '3': lambda: otter('headingAutopilot', 100.0, 0.3, -30.0, 200.0),
+        '3': lambda: otter('headingAutopilot', 90.0, 0.3, -30.0, 200.0),
         '4': lambda: ROVzefakkel('headingAutopilot', 3.0, 100.0),
         '5': lambda: semisub('DPcontrol', 10.0, 10.0, 40.0, 0.5, 190.0),
         '6': lambda: shipClarke83('headingAutopilot', -20.0, 70, 8, 6, 0.7, 0.5, 10.0, 1e5),
@@ -67,6 +68,7 @@ def main():
         '8': lambda: tanker('headingAutopilot', -20, 0.5, 150, 20, 80),
         '9': lambda: remus100('depthHeadingAutopilot', 30, 50, 1525, 0.5, 170),
         '10': lambda: torpedo('depthHeadingAutopilot', 30, 50, 1525, 0.5, 170),
+        '11': lambda: blueboat('speedHeadingAutopilot', 90.0, 0.0, -30.0, 1.0),
     }
 
     if no in vehicleOptions:

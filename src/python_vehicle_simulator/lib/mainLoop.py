@@ -25,6 +25,7 @@ def printSimInfo():
         supply('DPcontrol',x_d,y_d,psi_d,V_c,beta_c)      
         tanker('headingAutopilot',psi_d,V_c,beta_c,depth)    
         remus100('depthHeadingAutopilot',z_d,psi_d,V_c,beta_c)
+        blueboat('headingAutopilot',psi_d,V_c,beta_c,u_d) 
     """     
     
     print('---------------------------------------------------------------------------------------')
@@ -40,6 +41,7 @@ def printSimInfo():
     print(' 8 - Tanker: rudder-controlled ship model including shallow water effects, L = 304.8 m')
     print(' 9 - REMUS 100: AUV controlled by stern planes, a tail rudder and a propeller, L = 1.6 m')
     print("10 - Torpedo: Inspired by the REMUS 100 AUV, configurable fins and propeller, L = 1.6 m")
+    print('11 - Blue boat unmanned surface vehicle (USV): controlled by two propellers, L = 1.053 m')
     print('---------------------------------------------------------------------------------------')    
     
 ###############################################################################    
@@ -86,7 +88,9 @@ def simulate(N, sampleTime, vehicle):
         elif (vehicle.controlMode == 'DPcontrol'):
             u_control = vehicle.DPcontrol(eta,nu,sampleTime)                   
         elif (vehicle.controlMode == 'stepInput'):
-            u_control = vehicle.stepInput(t)          
+            u_control = vehicle.stepInput(t)      
+        elif (vehicle.controlMode == 'speedHeadingAutopilot'):   
+            u_control = vehicle.speedHeadingAutopilot(eta,nu,sampleTime)    
         
         # Store simulation data in simData
         signals = np.append( np.append( np.append(eta,nu),u_control), u_actual )
@@ -94,6 +98,7 @@ def simulate(N, sampleTime, vehicle):
 
         # Propagate vehicle and attitude dynamics
         [nu, u_actual]  = vehicle.dynamics(eta,nu,u_actual,u_control,sampleTime)
+        print(nu[0])
         eta = attitudeEuler(eta,nu,sampleTime)
 
     # Store simulation time vector

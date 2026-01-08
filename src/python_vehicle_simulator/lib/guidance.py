@@ -33,3 +33,28 @@ def refModel3(x_d, v_d, a_d, r, wn_d, zeta_d, v_max, sampleTime):
         v_d = -v_max    
     
     return x_d, v_d, a_d
+
+def refModel2(v_d, a_d, v_target, wn_d, zeta_d, v_max, sampleTime):
+    """
+    2nd-order Reference Model for Surge Speed.
+    Clamps the OUTPUT speed (u_d), similar to the 3rd-order model.
+    """
+    
+    # 1. Calculate the "jerk" (change in acceleration)
+    # Dynamics: mass-spring-damper for speed
+    da_d = wn_d**2 * (v_target - v_d) - 2 * zeta_d * wn_d * a_d
+    
+    # 2. Forward Euler integration
+    v_d += sampleTime * a_d  # Update speed
+    a_d += sampleTime * da_d # Update acceleration
+    
+    # 3. Output Saturation (The part you requested)
+    if v_d > v_max:
+        v_d = v_max
+        a_d = 0.0  # <--- CRITICAL: Stop accelerating if we hit the wall!
+        
+    elif v_d < -v_max:
+        v_d = -v_max
+        a_d = 0.0  # <--- CRITICAL: Stop accelerating if we hit the wall!
+        
+    return v_d, a_d
