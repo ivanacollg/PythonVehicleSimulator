@@ -46,7 +46,7 @@ Vehicle constructors:
   tanker('headingAutopilot', psi_d, V_c, beta_c, depth)    
   remus100('depthHeadingAutopilot', z_d, psi_d, V_c, beta_c)             
   torpedo('depthHeadingAutopilot', z_d, psi_d, V_c, beta_c)    
-  blueboat('headingAutopilot', psi_d, V_c, beta_c, tau_X)          
+  blueboat('speedHeadingAutopilot', psi_d, V_c, beta_c, u_d)          
 
 Call constructors without arguments to test step inputs, e.g. DSRV(), otter(), etc.
 """
@@ -68,7 +68,7 @@ def main():
         '8': lambda: tanker('headingAutopilot', -20, 0.5, 150, 20, 80),
         '9': lambda: remus100('depthHeadingAutopilot', 30, 50, 1525, 0.5, 170),
         '10': lambda: torpedo('depthHeadingAutopilot', 30, 50, 1525, 0.5, 170),
-        '11': lambda: blueboat('headingAutopilot', 90.0, 0.3, -30.0, 50.0),
+        '11': lambda: blueboat('speedHeadingAutopilot', 90.0, 0.0, -30.0, 1.0),
     }
 
     if no in vehicleOptions:

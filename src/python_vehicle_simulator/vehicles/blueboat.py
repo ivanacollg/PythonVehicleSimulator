@@ -63,7 +63,7 @@ class blueboat:
         r = 0, 
         V_current = 0, 
         beta_current = 0,
-        tau_X = 120
+        u_ref = 1 # m/s
     ):
         
         # Constants
@@ -71,7 +71,7 @@ class blueboat:
         self.g = 9.81           # acceleration of gravity (m/s^2)
         rho = 1000              # density of water (kg/m^3)
 
-        if controlSystem == "headingAutopilot":
+        if controlSystem == "speedHeadingAutopilot":
             self.controlDescription = (
                 "Heading autopilot, psi_d = "
                 + str(r)
@@ -82,11 +82,11 @@ class blueboat:
             controlSystem = "stepInput"
 
         self.ref = r
-        self.u_ref = 1.0 # m/s
+        self.u_ref = u_ref
         self.V_c = V_current
         self.beta_c = beta_current * D2R
         self.controlMode = controlSystem
-        self.tauX = tau_X  # surge force (N)
+        #self.tauX = tau_X  # surge force (N)
 
         # Initialize the blueboat USV model
         self.T_n = 0.1  # propeller time constants (s)
@@ -113,12 +113,10 @@ class blueboat:
         self.H_rg = Hmtrx(rg)
         self.S_rp = Smtrx(self.rp)
 
-        R44 = 0.4 * self.B  # radii of gyration (m)
-        R55 = 0.25 * self.L
-        R66 = 0.25 * self.L
+
         T_sway = 1.0        # time constant in sway (s)
         T_yaw = 1.0         # time constant in yaw (s)
-        Umax = 4  # max forward speed (m/s)
+        Umax = 4  # max forward speed (m/s) Educated guess, but can be changed later
 
         # Data for one pontoon
         self.B_pont = 0.128  # beam of one pontoon (m)
@@ -129,24 +127,37 @@ class blueboat:
         # Inertia dyadic, volume displacement and draft
         nabla = (m + self.mp) / rho  # volume
         self.T = nabla / (2 * Cb_pont * self.B_pont * self.L)  # draft
-        Ig_CG = m * np.diag(np.array([R44 ** 2, R55 ** 2, R66 ** 2]))
-        self.Ig = Ig_CG - m * self.S_rg @ self.S_rg - self.mp * self.S_rp @ self.S_rp
-        #Ig_CAD = np.array([
-		#		    [1.756,  -0.003,  0.069],
-		#		    [-0.003,  1.191,  -0.01],
-		#		    [0.069,  -0.01,  2.595]
-		#		])
-        #self.Ig = Ig_CAD
+
+        # Ig matrix option one (simplified)
+        #R44 = 0.4 * self.B  # radii of gyration (m)
+        #R55 = 0.25 * self.L
+        #R66 = 0.25 * self.L
+        #Ig_CG = m * np.diag(np.array([R44 ** 2, R55 ** 2, R66 ** 2]))
+        #self.Ig = Ig_CG - m * self.S_rg @ self.S_rg - self.mp * self.S_rp @ self.S_rp
+        # Ig matrix option two (CAD)
+        Ig_CAD = np.array([
+				    [1.756,  -0.003,  0.069],
+				    [-0.003,  1.191,  -0.01],
+				    [0.069,  -0.01,  2.595]
+				])
+        self.Ig = Ig_CAD
 
         # Experimental propeller data including lever arms
         self.l1 = -y_pont  # lever arm, left propeller (m)
         self.l2 = y_pont  # lever arm, right propeller (m)
-        self.k_pos = 0.02588   # Positive Bollard, one propeller
-        self.k_neg = 0.01222  # Negative Bollard, one propeller
+        # Thruster parameters
+        thruster_max = 5.63*9.81 # kg*f *9.81 = N From Datasheet
+        thruster_min = 2.8*9.81 # kg*f *9.81 = N From Datasheet
         #self.n_max = math.sqrt((0.5 * 24.4 * self.g) / self.k_pos)  # max. prop. rev.
         #self.n_min = -math.sqrt((0.5 * 13.6 * self.g) / self.k_neg) # min. prop. rev.
-        self.n_max = 45.85  # max. prop. rev. From data sheet
-        self.n_min = -47.066 # min. prop. rev. From data sheet
+        self.n_max = 45.85  # max. prop. rev. RPS/60 = RPM From Datasheet
+        self.n_min = -47.066 # min. prop. rev. RPS/60 = RPM From Datasheet
+        thruster_diameter = 0.112 # m From Datasheet
+        kt_pos = thruster_max/(rho*(thruster_diameter**4)*(self.n_max**2)) # propeller thrust coefficient Fossen eq.9.2
+        kt_neg = thruster_min/(rho*(thruster_diameter**4)*(self.n_min**2)) # propeller thrust coefficient Fossen eq.9.2
+        self.k_pos = rho*(thruster_diameter**4)*kt_pos #0.02588   # Positive Bollard, one propeller
+        self.k_neg = rho*(thruster_diameter**4)*kt_neg #0.01222  # Negative Bollard, one propeller
+        self.T_max = thruster_max*2 # Total max thrust two propellers 
 
         # MRB_CG = [ (m+mp) * I3  O3      (Fossen 2021, Chapter 3)
         #               O3       Ig ]
@@ -170,7 +181,8 @@ class blueboat:
         self.Minv = np.linalg.inv(self.M)
 
         # Hydrostatic quantities (Fossen 2021, Chapter 4)
-        Aw_pont = Cw_pont * self.L * self.B_pont  # waterline area, one pontoon
+        #Aw_pont = Cw_pont * self.L * self.B_pont  # waterline area, one pontoon (computed)
+        Aw_pont = 0.102  # waterline area, one pontoon (From CAD)
         I_T = (
             2
             * (1 / 12)
@@ -203,7 +215,7 @@ class blueboat:
         w5 = math.sqrt(G55 / self.M[4, 4])
 
         # Linear damping terms (hydrodynamic derivatives)
-        Xu = -110 / Umax # Max total thrust / Umax   # specified using the maximum speed
+        Xu = -self.T_max / Umax # Max total thrust / Umax   # specified using the maximum speed
         Yv = -self.M[1, 1]  / T_sway # specified using the time constant in sway
         Zw = -2 * 0.3 * w3 * self.M[2, 2]  # specified using relative damping
         Kp = -2 * 0.2 * w4 * self.M[3, 3]
@@ -211,6 +223,7 @@ class blueboat:
         Nr = -self.M[5, 5] / T_yaw  # specified by the time constant T_yaw
 
         self.D = -np.diag([Xu, Yv, Zw, Kp, Mq, Nr])
+        self.Xuu = 0.5*rho*Aw_pont*Cb_pont# Nonlinear surge speed dampning
 
         # Propeller configuration/input matrix
         B = self.k_pos * np.array([[1, 1], [-self.l1, -self.l2]])
@@ -218,15 +231,21 @@ class blueboat:
 
         # Heading autopilot
         self.e_int = 0  # integral state
-        self.wn = 2.5   # PID pole placement
-        self.zeta = 1.0
+        wb_h = 2.0 # wb = 1.0 -> 2.0 for heading
+        self.zeta_h = 1.0 # safe behaviour 1.0, agressive behavirou 0.8
+        self.wn_h = 1/(math.sqrt(1-2*self.zeta_h**2+math.sqrt(4*self.zeta_h**4-4*self.zeta_h**2+2)))*wb_h #2.5   # PID pole placement
+        #print(self.wn_h)
+
 
         #Surge speed autopilot
         self.u_int = 0
         self.u_max = Umax
         self.u_d = 0
         self.u_dot_d = 0
-
+        wb_s = 1.0 # wb = 0.5 -> 1.0 for heading
+        self.zeta_s = 1.0 # safe behaviour 1.0, agressive behavirou 0.8
+        self.wn_s = 1/(math.sqrt(1-2*self.zeta_s**2+math.sqrt(4*self.zeta_s**4-4*self.zeta_s**2+2)))*wb_s #2.5   # PID pole placment
+        #print(self.wn_s)
 
         # Reference model
         self.r_max = 10 * math.pi / 180  # maximum yaw rate
@@ -264,10 +283,10 @@ class blueboat:
 
         CA = m2c(self.MA, nu_r)
         # Uncomment to cancel the Munk moment in yaw, if stability problems
-        CA[5, 0] = 0  
-        CA[5, 1] = 0 
-        CA[0, 5] = 0
-        CA[1, 5] = 0
+        #CA[5, 0] = 0  
+        #CA[5, 1] = 0 
+        #CA[0, 5] = 0
+        #CA[1, 5] = 0
 
         C = CRB + CA
 
@@ -306,7 +325,7 @@ class blueboat:
         tau_damp[5] = tau_damp[5] - 10 * self.D[5, 5] * abs(nu_r[5]) * nu_r[5]
         # --- ADD THIS LINE FOR SURGE ---
         # Subtract quadratic drag force (F = -C * |u| * u)
-        tau_damp[0] = tau_damp[0] - (0.5*1000*0.102*2*0.35)*0.09 * abs(nu_r[0]) * nu_r[0] # Magic cumbers are Xuu dividing by 7 to make stable dor sim??
+        tau_damp[0] = tau_damp[0] - self.Xuu * 0.09 * abs(nu_r[0]) * nu_r[0] # the 0.09 factor reduces teh quadratic drac that wourl otehrwise explode Can be tuned
 
         # State derivatives (with dimension)
         tau_crossflow = crossFlowDrag(self.L, self.B_pont, self.T, nu_r)
@@ -336,7 +355,7 @@ class blueboat:
         [n1, n2] = controlAllocation(tau_X, tau_N)
         """
         tau = np.array([tau_X, tau_N])  # tau = B * u_alloc
-        print(tau)
+        #print(tau)
         u_alloc = np.matmul(self.Binv, tau)  # u_alloc = inv(B) * tau
 
         # u_alloc = abs(n) * n --> n = sign(u_alloc) * sqrt(u_alloc)
@@ -363,12 +382,12 @@ class blueboat:
             else:       # Turning Left (Starboard/Right motor is dominant)
                 n2 = self.n_max
                 n1 = self.n_max + diff
-        print(n1)
-        print(n2)
+        #print(n1)
+        #print(n2)
         return n1, n2
 
 
-    def speedAutopilot(self, nu, sampleTime):
+    def speedController(self, nu, sampleTime):
         """
         u = speedAutopilot(eta,nu,sampleTime) is a PI controller
         for automatic speed control based on pole placement.
@@ -381,15 +400,15 @@ class blueboat:
         e_u = u - self.u_d  # surge speed tracking error
         u_target = self.u_ref # surge speed setpoint
 
-        wn = 1.0# self.wn  # PID natural frequency
-        zeta = self.zeta  # PID natural relative damping factor
+        wn =  self.wn_s  # PID natural frequency
+        zeta = self.zeta_s  # PID natural relative damping factor
         wn_d = self.wn_d  # reference model natural frequency
         zeta_d = self.zeta_d  # reference model relative damping factor
 
-        m = 15 + (0.1*15)  # (mass-Xudot) = 15
-        d = 0.5*1000*0.102*2*0.35 # (Xuu = 0.5*rho*Awetsurface*Cd)
+        m = self.m_total + self.MA[0,0]  # (mass-Xudot) = 15
+        d = self.Xuu
         k = 0
-        tau_max = 110
+        tau_max = self.T_max
 
         # Heading PID feedback controller with 3rd-order reference model
         [tau_X, self.u_int, self.u_d, self.u_dot_d] = PIpolePlacement(
@@ -413,7 +432,7 @@ class blueboat:
         return tau_X
 
 
-    def headingAutopilot(self, eta, nu, sampleTime):
+    def headingController(self, eta, nu, sampleTime):
         """
         u = headingAutopilot(eta,nu,sampleTime) is a PID controller
         for automatic heading control based on pole placement.
@@ -428,15 +447,14 @@ class blueboat:
         e_r = r - self.r_d  # yaw rate tracking error
         psi_ref = self.ref * math.pi / 180  # yaw angle setpoint
 
-        wn = self.wn  # PID natural frequency
-        zeta = self.zeta  # PID natural relative damping factor
+        wn = self.wn_h  # PID natural frequency
+        zeta = self.zeta_h  # PID natural relative damping factor
         wn_d = self.wn_d  # reference model natural frequency
         zeta_d = self.zeta_d  # reference model relative damping factor
 
-        m = 2.595 + 4.4115 #(Iz-Nr)/1 moment of inertia in yaw including added mass
-        d = 4.4115 #Nr/1
+        m = self.Ig[2,2] + self.MA[5,5] #(Iz-Nrdot)/1 moment of inertia in yaw including added mass
+        d = self.D[5,5] #Nr/1
         k = 0
-        tau_X = self.speedAutopilot(nu, sampleTime)
 
         # Heading PID feedback controller with 3rd-order reference model
         [tau_N, self.e_int, self.psi_d, self.r_d, self.a_d] = PIDpolePlacement(
@@ -458,9 +476,15 @@ class blueboat:
             sampleTime,
         )
 
+
+        return tau_N
+
+
+    def speedHeadingAutopilot(self, eta, nu, sampleTime):
+        tau_N = self.headingController(eta, nu, sampleTime)
+        tau_X = self.speedController(nu, sampleTime)
         [n1, n2] = self.controlAllocation(tau_X, tau_N)
         u_control = np.array([n1, n2], float)
-
         return u_control
 
 
