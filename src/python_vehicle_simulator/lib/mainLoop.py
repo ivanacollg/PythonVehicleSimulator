@@ -90,7 +90,9 @@ def simulate(N, sampleTime, vehicle):
         elif (vehicle.controlMode == 'stepInput'):
             u_control = vehicle.stepInput(t)      
         elif (vehicle.controlMode == 'speedHeadingAutopilot'):   
-            u_control = vehicle.speedHeadingAutopilot(eta,nu,sampleTime)    
+            u_control = vehicle.speedHeadingAutopilot(eta,nu,sampleTime) 
+        elif (vehicle.controlMode == 'pathfollowingAutopilot'):   
+            u_control = vehicle.pathfollowingAutopilot(eta,nu,sampleTime,t)   
         
         # Store simulation data in simData
         signals = np.append( np.append( np.append(eta,nu),u_control), u_actual )
@@ -98,7 +100,7 @@ def simulate(N, sampleTime, vehicle):
 
         # Propagate vehicle and attitude dynamics
         [nu, u_actual]  = vehicle.dynamics(eta,nu,u_actual,u_control,sampleTime)
-        print(nu[0])
+        #print(nu[0])
         eta = attitudeEuler(eta,nu,sampleTime)
 
     # Store simulation time vector

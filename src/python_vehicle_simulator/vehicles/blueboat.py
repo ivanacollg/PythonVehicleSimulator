@@ -71,7 +71,7 @@ class blueboat:
         self.g = 9.81           # acceleration of gravity (m/s^2)
         rho = 1000              # density of water (kg/m^3)
 
-        if controlSystem == "speedHeadingAutopilot":
+        if controlSystem == "pathfollowingAutopilot":
             self.controlDescription = (
                 "Heading autopilot, psi_d = "
                 + str(r)
@@ -254,6 +254,11 @@ class blueboat:
         self.a_d = 0
         self.wn_d = 0.5  # desired natural frequency in yaw
         self.zeta_d = 1.0  # desired relative damping ratio
+
+        #ILOS Params
+        self.look_ahead_dist = 6 #m Set to 3 to 6 times the legth of the boat
+        self.kappa = 0.2 #0.1 slow, 1 is aggressive
+        self.integrator = 0
 
 
     def dynamics(self, eta, nu, u_actual, u_control, sampleTime):
@@ -445,7 +450,8 @@ class blueboat:
         r = nu[5]  # yaw rate
         e_psi = psi - self.psi_d  # yaw angle tracking error
         e_r = r - self.r_d  # yaw rate tracking error
-        psi_ref = self.ref * math.pi / 180  # yaw angle setpoint
+        psi_ref = self.ref#self.ref * math.pi / 180  # yaw angle setpoint
+
 
         wn = self.wn_h  # PID natural frequency
         zeta = self.zeta_h  # PID natural relative damping factor
@@ -480,12 +486,78 @@ class blueboat:
         return tau_N
 
 
+    
+    def getDesiredheading(self, x, y, wp_prev, wp_next,sampleTime):
+        """
+        Computes the desired heading to follow the line between wp_prev and wp_next.
+        
+        Args:
+            x, y: Current USV position (NED frame)
+            wp_prev: Previous waypoint [x, y]
+            wp_next: Target waypoint [x, y]
+            
+        Returns:
+            psi_d (float): Desired heading in Radians.
+        """
+        # 1. Geometry of the path
+        x_prev, y_prev = wp_prev
+        x_next, y_next = wp_next
+        
+        # Path angle (alpha_k) relative to North
+        alpha_k = np.arctan2(y_next - y_prev, x_next - x_prev)
+        
+        # 2. Cross-track error (ye)
+        # Formula: -(x - x_prev)*sin(alpha) + (y - y_prev)*cos(alpha)
+        # Positive ye means we are to the right of the path (need to turn left)
+        ye = -(x - x_prev) * np.sin(alpha_k) + (y - y_prev) * np.cos(alpha_k)
+
+        # PI gains based on eq.12.108
+        kp = 1/self.look_ahead_dist
+        ki = self.kappa*kp
+        
+        # Compute Desired Heading using PI
+        psi_d = alpha_k - np.arctan((kp*ye + ki*self.integrator))
+
+        # Integrator_dot eq.12.109
+        integrator_dot = (self.look_ahead_dist*ye) / (  (self.look_ahead_dist)**2 + (ye + self.kappa*self.integrator)**2)
+
+        # Integral error
+        self.integrator += integrator_dot * sampleTime
+        
+        # Normalize angle to [-pi, pi]
+        psi_d = (psi_d + np.pi) % (2 * np.pi) - np.pi
+        
+        return psi_d, ye
+
     def speedHeadingAutopilot(self, eta, nu, sampleTime):
         tau_N = self.headingController(eta, nu, sampleTime)
         tau_X = self.speedController(nu, sampleTime)
         [n1, n2] = self.controlAllocation(tau_X, tau_N)
         u_control = np.array([n1, n2], float)
         return u_control
+    
+    def pathfollowingAutopilot(self,eta,nu,sampleTime,t):
+
+        # 1. Calculate Sine Wave Heading
+        # Formula: Bias + Amplitude * sin(omega * t)
+        #psi_d = np.sin(t/20)
+        #print(psi_d*(180/math.pi))
+        #print(t)
+        # 2. (Optional) Normalize if you cross +/- PI (not strictly needed for small angles)
+        #self.ref = (psi_d + np.pi) % (2 * np.pi) - np.pi
+
+        wp_prev = [3,0]
+        wp_next = [3,100]
+        self.ref, _ = self.getDesiredheading(eta[0], eta[1], wp_prev, wp_next, sampleTime)
+        print(self.ref*(180/math.pi))
+
+        tau_N = self.headingController(eta, nu, sampleTime)
+        tau_X = self.speedController(nu, sampleTime)
+        [n1, n2] = self.controlAllocation(tau_X, tau_N)
+        u_control = np.array([n1, n2], float)
+        return u_control
+        
+
 
 
     def stepInput(self, t):
