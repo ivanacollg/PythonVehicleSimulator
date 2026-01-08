@@ -68,7 +68,7 @@ def main():
         '8': lambda: tanker('headingAutopilot', -20, 0.5, 150, 20, 80),
         '9': lambda: remus100('depthHeadingAutopilot', 30, 50, 1525, 0.5, 170),
         '10': lambda: torpedo('depthHeadingAutopilot', 30, 50, 1525, 0.5, 170),
-        '11': lambda: blueboat('speedHeadingAutopilot', 90.0, 0.0, -30.0, 1.0),
+        '11': lambda: blueboat('pathfollowingAutopilot', 90.0, 0.0, -30.0, 0.3),
     }
 
     if no in vehicleOptions:
